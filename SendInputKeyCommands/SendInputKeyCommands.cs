@@ -10,8 +10,10 @@ namespace SendInputKeyCommands
         /// </summary>
         [DllImport("user32.dll")]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT[] pInputs, int cbSize);
+
         [DllImport("user32.dll")]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT64[] pInputs, int cbSize);
+
         [DllImport("user32.dll", SetLastError = false)]
         static extern IntPtr GetMessageExtraInfo();
 
