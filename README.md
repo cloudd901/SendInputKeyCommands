@@ -7,6 +7,10 @@ ________________________________________________________________
 - Call a SendKey method = win.
 ________________________________________________________________
 
+This wrapper with convert strings to VirtualKeyCodes for use with SendInput.
+It will also detect and use Shift to enter symbols or uppercase letters.
+The option for using VirtualKeyCodes directly is still there.
+
 Setup Example:
 
 	using System;
@@ -16,8 +20,8 @@ Setup Example:
 	{
 	    public static YourClass()
 	    {
-	      public static void Test()
-	      {
+		public static void Test()
+		{
 		  SendInputKeyCommand sendKeyComm = new SendInputKeyCommand();
 
 		  //Example1:
@@ -35,7 +39,7 @@ Setup Example:
 
 		  //Example3b:
 		  sendKeyComm.SendKeyPress("Home");
-	      }
+		}
 	    }
 	}
 	
