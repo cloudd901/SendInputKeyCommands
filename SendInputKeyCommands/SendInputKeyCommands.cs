@@ -8,14 +8,14 @@ namespace SendInputKeyCommands
         /// <summary>
         /// Synthesizes keystrokes, mouse motions, and button clicks.
         /// </summary>
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT[] pInputs, int cbSize);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         private static extern uint SendInput(uint nInputs, [MarshalAs(UnmanagedType.LPArray), In] INPUT64[] pInputs, int cbSize);
 
         [DllImport("user32.dll", SetLastError = false)]
-        static extern IntPtr GetMessageExtraInfo();
+        private static extern IntPtr GetMessageExtraInfo();
 
         [StructLayout(LayoutKind.Explicit)]
         private struct INPUT
@@ -43,7 +43,7 @@ namespace SendInputKeyCommands
             public HARDWAREINPUT hi;
         }
         [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
+        public struct KEYBDINPUT
         {
             public ushort wVk;
             public ushort wScan;
@@ -69,6 +69,11 @@ namespace SendInputKeyCommands
             IntPtr dwExtraInfo;
         }
 
+        /// <summary>EventHandler for SendInput failed events.</summary>
+        public delegate void SendInputKeyFailedEventHandler(string error, string key, KeyActions ka);
+        /// <summary>Occurs when Sending a Key has failed.</summary>
+        public event SendInputKeyFailedEventHandler SendInputKeyFailedCall;
+
         private const int INPUT_KEYBOARD = 1;
 
         public SendInputKeyCommand()
@@ -78,23 +83,30 @@ namespace SendInputKeyCommands
 
         private void DoKeyAction(KEYBDINPUT ki, KeyActions ka)
         {
+            uint test1 = 1;
+            uint test2 = 1;
             if (IntPtr.Size > 4)
             {
                 INPUT64 input = new INPUT64();
                 input.type = INPUT_KEYBOARD;
                 input.ki = ki;
-                if (ka == KeyActions.Hold || ka == KeyActions.Press) { SendInput(1, new INPUT64[] { input }, Marshal.SizeOf(input)); }
+                if (ka == KeyActions.Hold || ka == KeyActions.Press) { test1 = SendInput(1, new INPUT64[] { input }, Marshal.SizeOf(input)); }
                 input.ki.dwFlags |= (uint)KEYEVENTF.KEYUP;
-                if (ka == KeyActions.Release || ka == KeyActions.Press) { SendInput(1, new INPUT64[] { input }, Marshal.SizeOf(input)); }
+                if (ka == KeyActions.Release || ka == KeyActions.Press) { test2 = SendInput(1, new INPUT64[] { input }, Marshal.SizeOf(input)); }
             }
             else
             {
                 INPUT input = new INPUT();
                 input.type = INPUT_KEYBOARD;
                 input.ki = ki;
-                if (ka == KeyActions.Hold || ka == KeyActions.Press) { SendInput(1, new INPUT[] { input }, Marshal.SizeOf(input)); }
+                if (ka == KeyActions.Hold || ka == KeyActions.Press) { test1 = SendInput(1, new INPUT[] { input }, Marshal.SizeOf(input)); }
                 input.ki.dwFlags |= (uint)KEYEVENTF.KEYUP;
-                if (ka == KeyActions.Release || ka == KeyActions.Press) { SendInput(1, new INPUT[] { input }, Marshal.SizeOf(input)); }
+                if (ka == KeyActions.Release || ka == KeyActions.Press) { test2 = SendInput(1, new INPUT[] { input }, Marshal.SizeOf(input)); }
+            }
+            if (test1 == 0 || test2 == 0)
+            {
+                string key = ki.wVk != 0 ? Enum.GetName(typeof(VirtualKeyCode), ki.wVk) : Enum.GetName(typeof(ScanCodeShort), ki.wScan);
+                SendInputKeyFailedCall?.Invoke(Marshal.GetLastWin32Error().ToString(), key, ka);
             }
         }
         public void SendKeyPress(string keyString)
@@ -106,16 +118,7 @@ namespace SendInputKeyCommands
         }
         public void SendKeyPress(VirtualKeyCode virtualKey)
         {
-            KEYBDINPUT ki = new KEYBDINPUT()
-            {
-                time = 0,
-                wScan = 0,
-                dwExtraInfo = GetMessageExtraInfo(),
-                wVk = (ushort)virtualKey,
-                dwFlags = (uint)CheckGetExtendedKey(virtualKey)
-            };
-
-            DoKeyAction(ki, KeyActions.Press);
+            DoKeyAction(SetKi(virtualKey), KeyActions.Press);
         }
 
         public void SendKeyDown(string keyString)
@@ -125,16 +128,7 @@ namespace SendInputKeyCommands
         }
         public void SendKeyDown(VirtualKeyCode virtualKey)
         {
-            KEYBDINPUT ki = new KEYBDINPUT()
-            {
-                time = 0,
-                wScan = 0,
-                dwExtraInfo = GetMessageExtraInfo(),
-                wVk = (ushort)virtualKey,
-                dwFlags = (uint)CheckGetExtendedKey(virtualKey)
-            };
-
-            DoKeyAction(ki, KeyActions.Hold);
+            DoKeyAction(SetKi(virtualKey), KeyActions.Hold);
         }
 
         public void SendKeyUp(string keyString)
@@ -144,18 +138,33 @@ namespace SendInputKeyCommands
         }
         public void SendKeyUp(VirtualKeyCode virtualKey)
         {
-            KEYBDINPUT ki = new KEYBDINPUT()
-            {
-                time = 0,
-                wScan = 0,
-                dwExtraInfo = GetMessageExtraInfo(),
-                wVk = (ushort)virtualKey,
-                dwFlags = (uint)CheckGetExtendedKey(virtualKey)
-            };
-
-            DoKeyAction(ki, KeyActions.Release);
+            DoKeyAction(SetKi(virtualKey), KeyActions.Release);
         }
-
+        private KEYBDINPUT SetKi(VirtualKeyCode virtualKey, bool useScanCode = true)
+        {
+            if (useScanCode)
+            {
+                return new KEYBDINPUT()
+                {
+                    time = 0,
+                    wScan = (ushort)SCSFromVKC(virtualKey),
+                    dwExtraInfo = GetMessageExtraInfo(),
+                    wVk = 0,
+                    dwFlags = (uint)CheckGetExtendedKey(virtualKey) | (uint)KEYEVENTF.SCANCODE
+                };
+            }
+            else
+            {
+                return new KEYBDINPUT()
+                {
+                    time = 0,
+                    wScan = 0,
+                    dwExtraInfo = GetMessageExtraInfo(),
+                    wVk = (ushort)virtualKey,
+                    dwFlags = (uint)CheckGetExtendedKey(virtualKey)
+                };
+            }
+        }
         private KEYEVENTF CheckGetExtendedKey(VirtualKeyCode virtualKey)
         {
             KEYEVENTF k = KEYEVENTF.KEYDOWN;
@@ -167,7 +176,7 @@ namespace SendInputKeyCommands
             return k;
         }
         [Flags]
-        private enum KeyActions
+        public enum KeyActions
         {
             Hold,
             Release,
